@@ -5,34 +5,43 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.URLDecoder
 
-class Student (private val username: String, private val password: String){
+class Student(private val username: String, private val password: String) {
     private val client = OkHttpClient()
     private var cookie = ""
-    private var serverSideUrl : String = ""
+    private var serverSideUrl: String = ""
     private var specialId = 0
+    private lateinit var userInfo: JSONObject
+    private lateinit var specialInfo: JSONObject
 
-    fun start(){
+    fun start() {
         try {
             login(username, password)
             val homeworkList = getHomeworkList()
-            homeworkList.forEach {
-                val homework = it as JSONObject
-                if(homework.getString("workStatus").equals("UnFinish")){ // 获取未完成列表
+            for (homework in homeworkList) {
+                if (homework !is JSONObject) {
+                    continue
+                }
+                if (homework.getString("sort") == "Skill") {
+                    continue
+                }
+                if (homework.getString("workStatus").equals("UnFinish")) { // 获取未完成列表
                     specialId = getSpecialId(homework.getString("linkUrl"))
                     println(specialId)
-                    val userInfo = getUserInfo()
-                    println(getNoFinishHomeworkCount())
+                    userInfo = getUserInfo()
+                    specialInfo = getSpecialInfo(specialId)
+                    println(specialInfo)
                     stepStatus()
-                    sign(userInfo.getInteger("countyId"))
+                    sign()
                 }
             }
-        }catch (e: Exception){
+        } catch (e: Exception) {
             e.printStackTrace()
         }
     }
-    
-    private fun login(username : String, password : String){
+
+    private fun login(username: String, password: String) {
         val json = JSONObject()
         json["username"] = username
         json["password"] = password
@@ -44,9 +53,9 @@ class Student (private val username: String, private val password: String){
             .build()
         client.newCall(request).execute().use { response ->
             val loginInfo = JSON.parseObject(response.body!!.string())
-            if(loginInfo.getInteger("err_code") != 0){
+            if (loginInfo.getInteger("err_code") != 0) {
                 throw Exception("$username | ${loginInfo.getString("err_desc")}")
-            }else{
+            } else {
                 cookie = getCookie(response.headers("Set-Cookie"))
                 // 这两个接口都能用
                 serverSideUrl = getServiceSideUrl(loginInfo.getJSONObject("data").getString("serverSide"))
@@ -56,10 +65,10 @@ class Student (private val username: String, private val password: String){
         }
     }
 
-    private fun getNoFinishHomeworkCount() : Int{
+    private fun getNoFinishHomeworkCount(): Int {
         val request = Request.Builder()
             .url("https://yyapi.xueanquan.com/guangxi/api/v1/StudentHomeWork/NoFinishHomeWorkCount")
-            .addHeader("Cookie",cookie)
+            .addHeader("Cookie", cookie)
             .build()
 
         client.newCall(request).execute().use { response ->
@@ -67,10 +76,10 @@ class Student (private val username: String, private val password: String){
         }
     }
 
-    private fun getUserInfo() : JSONObject {
+    private fun getUserInfo(): JSONObject {
         val request = Request.Builder()
             .url("$serverSideUrl/users/user-info")
-            .addHeader("Cookie",cookie)
+            .addHeader("Cookie", cookie)
             .build()
 
         client.newCall(request).execute().use { response ->
@@ -78,19 +87,20 @@ class Student (private val username: String, private val password: String){
         }
     }
 
-    private fun getCookie(cookies : List<String>) : String{
+    private fun getCookie(cookies: List<String>): String {
         var cookie = ""
         cookies.forEach {
-            cookie += it.substring(0,it.indexOf(";") + 1)
+            cookie += URLDecoder.decode(it.substring(0, it.indexOf(";") + 1))
         }
         return cookie
     }
 
-    private fun sign(countyId: Int){
+    private fun sign() {
         val json = JSONObject()
         val request = Request.Builder()
             .url("$serverSideUrl/records/sign")
             .addHeader("Cookie",cookie)
+            .addHeader("Referer", "https://huodong.xueanquan.com/")
         json["specialId"] = specialId
 
         //step 1
@@ -103,20 +113,28 @@ class Student (private val username: String, private val password: String){
 
         stepStatus() // 不加这玩意好像不会更新状态
 
-        //step 2
-        json["step"] = 2
-        json["countyId"] = countyId
-        println(json.toJSONString())
-        val body2 = json.toJSONString().toRequestBody("application/json".toMediaType())
-        request.post(body2)
-        client.newCall(request.build()).execute().use { response ->
-            println(response.body!!.string())
-        }
 
-        stepStatus()
+        val optionalGrades = specialInfo.getJSONObject("data").getJSONArray("optionalGrades").toArray()
+
+        for (item in optionalGrades) {
+            if (item != userInfo.getInteger("grade")) {
+                continue
+            }
+            //step 2
+            json["step"] = 2
+            json["countyId"] = userInfo.getInteger("countyId")
+            println(json.toJSONString())
+            val body2 = json.toJSONString().toRequestBody("application/json".toMediaType())
+            request.post(body2)
+            client.newCall(request.build()).execute().use { response ->
+                println(response.body!!.string())
+            }
+
+            stepStatus()
+        }
     }
 
-    private fun stepStatus(){
+    private fun stepStatus() {
         val request = Request.Builder()
             .url("$serverSideUrl/records/finish-status?specialId=$specialId")
             .addHeader("Cookie",cookie)
@@ -129,7 +147,7 @@ class Student (private val username: String, private val password: String){
     private fun getHomeworkList(): JSONArray {
         val request = Request.Builder()
             .url("https://yyapi.xueanquan.com/guangxi/safeapph5/api/v1/homework/homeworklist")
-            .addHeader("Cookie",cookie)
+            .addHeader("Cookie", cookie)
             .build()
 
         client.newCall(request).execute().use { response ->
@@ -137,18 +155,33 @@ class Student (private val username: String, private val password: String){
         }
     }
 
-    private fun getServiceSideUrl(serverSide: String) : String{
+    private fun getServiceSideUrl(serverSide: String): String {
         val request = Request.Builder()
             .url("https://huodongapi.xueanquan.com/Topic/topic/main/api/v1/users/get-serviceside?serviceSide=$serverSide")
             .build()
-        return "https:${client.newCall(request).execute().body!!.string().replace("\"","")}/Topic/topic/platformapi/api/v1"
+        return "https:${
+            client.newCall(request).execute().body!!.string().replace("\"", "")
+        }/Topic/topic/platformapi/api/v1"
     }
 
     private fun getSpecialId(url: String): Int {
+        println(url)
         val request = Request.Builder()
             .url(url.replace("index.html", "message.html"))
             .build()
         val source = client.newCall(request).execute().body!!.string()
         return "(?<=title>).*(?=</title)".toRegex().find(source)!!.value.toInt()
+    }
+
+    private fun getSpecialInfo(specialId: Int): JSONObject {
+        val request = Request.Builder()
+            .url(
+                "https://huodongapi.xueanquan.com/Topic/topic/main/api/v1/records/special-info?specialId=$specialId&comeFrom=${userInfo.getInteger("comeFrom")}&countyId=${userInfo.getInteger("countyId")}"
+            )
+            .addHeader("Cookie", cookie)
+            .build()
+        client.newCall(request).execute().use { response ->
+            return JSON.parseObject(response.body!!.string())
+        }
     }
 }

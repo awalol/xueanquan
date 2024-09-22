@@ -1,11 +1,10 @@
 val studentsUsername = ""
-    .split("\n")
 val studentsPassword = ""
-    .split("\n")
 
 fun main() {
-    studentsUsername.forEachIndexed { index, username ->
-        val student = Student(username,studentsPassword[index])
+    studentsUsername.split("\n").forEachIndexed { _, username ->
+        println("------Current Student: $username")
+        val student = Student(username,studentsPassword)
         student.start()
     }
 }

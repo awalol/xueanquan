@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm") version "1.8.20"
+    kotlin("jvm") version "2.0.0"
     application
 }
 
@@ -13,8 +13,8 @@ repositories {
 
 dependencies {
     testImplementation(kotlin("test"))
-    implementation("com.alibaba.fastjson2","fastjson2","2.0.29")
-    implementation("com.alibaba.fastjson2:fastjson2-kotlin:2.0.29")
+    implementation("com.alibaba.fastjson2","fastjson2","2.0.51")
+    implementation("com.alibaba.fastjson2:fastjson2-kotlin:2.0.51")
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
 }
 
@@ -23,7 +23,7 @@ tasks.test {
 }
 
 kotlin {
-    jvmToolchain(11)
+    jvmToolchain(17)
 }
 
 application {
